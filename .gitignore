@@ -1,4 +1,4 @@
 node_modules/
-dist/
+# dist/ - Keep dist/ in git for git-based installs
 *.log
 .DS_Store
