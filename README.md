@@ -41,6 +41,19 @@ This generates:
 - `dist/governanceReasonCodes.cjs` - CommonJS version
 - `dist/governanceReasonCodes.d.ts` - TypeScript declarations
 
+### Setup GitHub Repository
+
+Uses GitHub token from `/Users/macstudio/ai-node/.env`:
+
+```bash
+npm run setup:github
+```
+
+Or manually:
+```bash
+./scripts/setup-github-repo.sh
+```
+
 ### Publish
 ```bash
 npm publish

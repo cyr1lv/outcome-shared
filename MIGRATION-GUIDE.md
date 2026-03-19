@@ -11,6 +11,46 @@
 
 ### STEP 1: Create GitHub Repository
 
+**Option A: Automated script (recommended)**
+
+```bash
+cd /Users/macstudio/ai-node/outcome-shared-setup
+./scripts/setup-github-repo.sh
+```
+
+This script:
+- Loads `GITHUB_TOKEN` and `GITHUB_OWNER` from `/Users/macstudio/ai-node/.env`
+- Creates the repository via GitHub API (if it doesn't exist)
+- Initializes git, commits, and pushes to GitHub
+
+**Option B: Manual setup with token**
+
+```bash
+cd /Users/macstudio/ai-node/outcome-shared-setup
+
+# Load GitHub token from .env
+export GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" /Users/macstudio/ai-node/.env | cut -d '=' -f2)
+export GITHUB_OWNER=$(grep "^GITHUB_OWNER=" /Users/macstudio/ai-node/.env | cut -d '=' -f2)
+
+# Initialize git
+git init
+git add .
+git commit -m "Initial commit: @outcome/shared package"
+
+# Create repository via GitHub API (if doesn't exist)
+curl -X POST \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  https://api.github.com/user/repos \
+  -d "{\"name\":\"outcome-shared\",\"private\":false,\"description\":\"Shared governance reason codes for Platform and Mandate services\"}"
+
+# Add remote and push
+git remote add origin https://${GITHUB_TOKEN}@github.com/${GITHUB_OWNER}/outcome-shared.git
+git push -u origin main
+```
+
+**Option C: Using SSH (if SSH keys are configured)**
+
 ```bash
 cd /Users/macstudio/ai-node/outcome-shared-setup
 git init

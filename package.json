@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc && node scripts/build-cjs.cjs",
     "prepublishOnly": "npm run build",
+    "setup:github": "bash scripts/setup-github-repo.sh",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
