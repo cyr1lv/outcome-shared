@@ -251,15 +251,17 @@ function validateGovernanceV2(gov) {
     validateGovernanceV1(v1Shape);
     if (g.version !== "governance_v2")
         throw new Error(`${module.exports.GOVERNANCE_INVALID}:version`);
-    const nba = g.nba;
-    if (!nba || typeof nba !== "object")
-        throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba`);
-    const nbaO = nba;
-    const states = ["ALLOW", "WAIT", "BLOCK"];
-    if (!states.includes(nbaO.state))
-        throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba_state`);
-    if (typeof nbaO.conviction_score !== "number")
-        throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba_conviction_score`);
+    if ("nba" in g && g.nba !== undefined) {
+        const nba = g.nba;
+        if (!nba || typeof nba !== "object")
+            throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba`);
+        const nbaO = nba;
+        const states = ["ALLOW", "WAIT", "BLOCK"];
+        if (!states.includes(nbaO.state))
+            throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba_state`);
+        if (typeof nbaO.conviction_score !== "number")
+            throw new Error(`${module.exports.GOVERNANCE_INVALID}:nba_conviction_score`);
+    }
     if (typeof g.action_type !== "string" || !g.action_type.trim()) {
         throw new Error(`${module.exports.GOVERNANCE_INVALID}:action_type`);
     }

@@ -112,7 +112,9 @@ export declare function validateMandateVerdictV2(v: unknown): asserts v is Manda
  */
 export type GovernanceV2 = Omit<GovernanceV1, "version"> & {
     version: "governance_v2";
-    nba: {
+    /** Absent when no fresh nba_decision_snapshot_v1 exists yet for this match (e.g. never viewed).
+     *  Mandate's deriveRiskTier fails closed (WAIT/MEDIUM/RECRUITER) when absent — never fabricate a value. */
+    nba?: {
         state: NbaSurfaceState;
         conviction_score: number;
     };

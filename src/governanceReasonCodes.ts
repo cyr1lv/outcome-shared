@@ -311,7 +311,9 @@ export function validateMandateVerdictV2(v: unknown): asserts v is MandateVerdic
  */
 export type GovernanceV2 = Omit<GovernanceV1, "version"> & {
   version: "governance_v2";
-  nba: { state: NbaSurfaceState; conviction_score: number };
+  /** Absent when no fresh nba_decision_snapshot_v1 exists yet for this match (e.g. never viewed).
+   *  Mandate's deriveRiskTier fails closed (WAIT/MEDIUM/RECRUITER) when absent — never fabricate a value. */
+  nba?: { state: NbaSurfaceState; conviction_score: number };
   action_type: string;
   contact_history?: {
     count_by_channel: Record<GovernanceChannelKey, number>;
@@ -331,12 +333,14 @@ export function validateGovernanceV2(gov: unknown): asserts gov is GovernanceV2 
   validateGovernanceV1(v1Shape);
   if (g.version !== "governance_v2") throw new Error(`${GOVERNANCE_INVALID}:version`);
 
-  const nba = g.nba;
-  if (!nba || typeof nba !== "object") throw new Error(`${GOVERNANCE_INVALID}:nba`);
-  const nbaO = nba as Record<string, unknown>;
-  const states: NbaSurfaceState[] = ["ALLOW", "WAIT", "BLOCK"];
-  if (!states.includes(nbaO.state as NbaSurfaceState)) throw new Error(`${GOVERNANCE_INVALID}:nba_state`);
-  if (typeof nbaO.conviction_score !== "number") throw new Error(`${GOVERNANCE_INVALID}:nba_conviction_score`);
+  if ("nba" in g && g.nba !== undefined) {
+    const nba = g.nba;
+    if (!nba || typeof nba !== "object") throw new Error(`${GOVERNANCE_INVALID}:nba`);
+    const nbaO = nba as Record<string, unknown>;
+    const states: NbaSurfaceState[] = ["ALLOW", "WAIT", "BLOCK"];
+    if (!states.includes(nbaO.state as NbaSurfaceState)) throw new Error(`${GOVERNANCE_INVALID}:nba_state`);
+    if (typeof nbaO.conviction_score !== "number") throw new Error(`${GOVERNANCE_INVALID}:nba_conviction_score`);
+  }
 
   if (typeof g.action_type !== "string" || !g.action_type.trim()) {
     throw new Error(`${GOVERNANCE_INVALID}:action_type`);
