@@ -71,5 +71,60 @@ export type GovernanceV1 = {
 export declare function assertGovernanceReasonCode(code: string): asserts code is GovernanceReasonCode;
 /** Throws Error with message starting GOVERNANCE_INVALID if contract violated. */
 export declare function validateGovernanceV1(gov: unknown): asserts gov is GovernanceV1;
+/** Match-decision axis, distinct from Mandate's governance-permission axis (§8.1). */
+export type NbaSurfaceState = "ALLOW" | "WAIT" | "BLOCK";
+/** Harm axis the company-policy-pack layer will classify (P1.5); "legal_edge" always forces HIGH. */
+export type HarmLevel = "none" | "company" | "legal_edge";
+export type RiskTier = "LOW" | "MEDIUM" | "HIGH";
+export declare const ALL_RISK_TIERS: readonly ["LOW", "MEDIUM", "HIGH"];
+export type RequiredApprover = "NONE" | "RECRUITER" | "HUMAN_MANDATORY";
+export declare const ALL_REQUIRED_APPROVERS: readonly ["NONE", "RECRUITER", "HUMAN_MANDATORY"];
+/** Ongewijzigde semantiek t.o.v. bestaande ad-hoc `status` strings in mandateEvaluate.js. */
+export type GovernanceDecisionStatus = "ALLOW" | "WAIT" | "BLOCK" | "DENY_EXECUTE";
+/**
+ * Canonical tier derivation (§4.2 / §8.2 table). Returns null risk_tier only for
+ * non-executable states (BLOCK/DENY_EXECUTE, or a legal-floor violation) — the
+ * caller must not execute regardless of required_approver in that case.
+ */
+export declare function deriveRiskTier(status: GovernanceDecisionStatus, nbaState: NbaSurfaceState, harmLevel: HarmLevel): {
+    risk_tier: RiskTier | null;
+    required_approver: RequiredApprover;
+};
+/**
+ * `MandateVerdictV2` (§8.2) — additive successor to the untyped ad-hoc verdict shape
+ * mandateEvaluate.js currently returns. `risk_tier`/`required_approver` are new;
+ * everything else keeps existing semantics.
+ */
+export type MandateVerdictV2 = {
+    version: "mandate_verdict_v2";
+    status: GovernanceDecisionStatus;
+    risk_tier: RiskTier | null;
+    required_approver: RequiredApprover;
+    reason_codes: GovernanceReasonCode[];
+    capabilities: string[];
+    policy_version: string;
+};
+export declare function validateMandateVerdictV2(v: unknown): asserts v is MandateVerdictV2;
+/**
+ * `GovernanceV2` (§8.3) — additive on `GovernanceV1`. v1-consumers ignore the new
+ * fields; Mandate reads them when present. `contact_history` is the light
+ * contact-count read (P1.5), fed in from outside — Mandate stays stateless (B2).
+ */
+export type GovernanceV2 = Omit<GovernanceV1, "version"> & {
+    version: "governance_v2";
+    nba: {
+        state: NbaSurfaceState;
+        conviction_score: number;
+    };
+    action_type: string;
+    contact_history?: {
+        count_by_channel: Record<GovernanceChannelKey, number>;
+        window_days: number;
+        last_contact_at?: string;
+    };
+};
+export declare function isGovernanceV2(gov: unknown): gov is GovernanceV2;
+/** Validates the v1 base contract, then the v2-additive fields when version === "governance_v2". */
+export declare function validateGovernanceV2(gov: unknown): asserts gov is GovernanceV2;
 export declare function deepFreezeGovernance<T extends object>(obj: T): T;
 //# sourceMappingURL=governanceReasonCodes.d.ts.map

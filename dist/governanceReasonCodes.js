@@ -8,9 +8,13 @@
  * Exported as npm package @outcome/shared for cross-repo consumption.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GOVERNANCE_CHANNEL_KEYS = exports.CHANNEL_BLOCK_REASON_CODES = exports.GOVERNANCE_TIMING_REASONS = exports.ALL_GOVERNANCE_REASON_CODES = exports.MANDATE_WAIT_REVIEW = exports.MANDATE_WAIT_NBA_NO_ACTION = exports.MANDATE_WAIT_EMAIL_TIMING = exports.MANDATE_BLOCK_EMAIL_CONSENT = exports.MANDATE_BLOCK_EMAIL_POLICY = exports.MANDATE_BLOCK_ALL_POLICY = exports.MANDATE_WAIT_NO_CHANNEL = exports.MANDATE_WAIT_TIMING = exports.MANDATE_EMAIL_ALLOWED = exports.MANDATE_PRESENT_ALLOWED = exports.NBA_STATE_MISSING = exports.NBA_NO_ACTION = exports.GOVERNANCE_BUILD_FAILED = exports.GOVERNANCE_INVALID = exports.GOVERNANCE_MISSING = exports.INTENT_UNKNOWN = exports.INTENT_REVOKED = exports.CHANNEL_NO_AVAILABLE = exports.CHANNEL_POLICY_BLOCK = exports.CONSENT_EXPIRED = exports.CONSENT_MISSING = exports.CONSENT_REVOKED = exports.TIMING_COOLDOWN = exports.TIMING_EXPIRED = exports.TIMING_PASSIVE = exports.TIMING_OK = void 0;
+exports.ALL_REQUIRED_APPROVERS = exports.ALL_RISK_TIERS = exports.GOVERNANCE_CHANNEL_KEYS = exports.CHANNEL_BLOCK_REASON_CODES = exports.GOVERNANCE_TIMING_REASONS = exports.ALL_GOVERNANCE_REASON_CODES = exports.MANDATE_WAIT_REVIEW = exports.MANDATE_WAIT_NBA_NO_ACTION = exports.MANDATE_WAIT_EMAIL_TIMING = exports.MANDATE_BLOCK_EMAIL_CONSENT = exports.MANDATE_BLOCK_EMAIL_POLICY = exports.MANDATE_BLOCK_ALL_POLICY = exports.MANDATE_WAIT_NO_CHANNEL = exports.MANDATE_WAIT_TIMING = exports.MANDATE_EMAIL_ALLOWED = exports.MANDATE_PRESENT_ALLOWED = exports.NBA_STATE_MISSING = exports.NBA_NO_ACTION = exports.GOVERNANCE_BUILD_FAILED = exports.GOVERNANCE_INVALID = exports.GOVERNANCE_MISSING = exports.INTENT_UNKNOWN = exports.INTENT_REVOKED = exports.CHANNEL_NO_AVAILABLE = exports.CHANNEL_POLICY_BLOCK = exports.CONSENT_EXPIRED = exports.CONSENT_MISSING = exports.CONSENT_REVOKED = exports.TIMING_COOLDOWN = exports.TIMING_EXPIRED = exports.TIMING_PASSIVE = exports.TIMING_OK = void 0;
 exports.assertGovernanceReasonCode = assertGovernanceReasonCode;
 exports.validateGovernanceV1 = validateGovernanceV1;
+exports.deriveRiskTier = deriveRiskTier;
+exports.validateMandateVerdictV2 = validateMandateVerdictV2;
+exports.isGovernanceV2 = isGovernanceV2;
+exports.validateGovernanceV2 = validateGovernanceV2;
 exports.deepFreezeGovernance = deepFreezeGovernance;
 exports.TIMING_OK = "TIMING_OK";
 exports.TIMING_PASSIVE = "TIMING_PASSIVE";
@@ -180,6 +184,94 @@ function validateGovernanceV1(gov) {
                 throw new Error(`${exports.GOVERNANCE_INVALID}:channel_${key}_invalid_block_code`);
             }
         }
+    }
+}
+exports.ALL_RISK_TIERS = ["LOW", "MEDIUM", "HIGH"];
+exports.ALL_REQUIRED_APPROVERS = ["NONE", "RECRUITER", "HUMAN_MANDATORY"];
+/**
+ * Canonical tier derivation (§4.2 / §8.2 table). Returns null risk_tier only for
+ * non-executable states (BLOCK/DENY_EXECUTE, or a legal-floor violation) — the
+ * caller must not execute regardless of required_approver in that case.
+ */
+function deriveRiskTier(status, nbaState, harmLevel) {
+    if (status === "BLOCK" || status === "DENY_EXECUTE" || nbaState === "BLOCK") {
+        return { risk_tier: null, required_approver: "HUMAN_MANDATORY" };
+    }
+    if (harmLevel === "legal_edge") {
+        return { risk_tier: "HIGH", required_approver: "HUMAN_MANDATORY" };
+    }
+    if (nbaState === "WAIT") {
+        return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
+    }
+    // nbaState === "ALLOW"
+    if (harmLevel === "company") {
+        return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
+    }
+    return { risk_tier: "LOW", required_approver: "NONE" };
+}
+function validateMandateVerdictV2(v) {
+    if (!v || typeof v !== "object")
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_not_object`);
+    const o = v;
+    if (o.version !== "mandate_verdict_v2")
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_version`);
+    const statuses = ["ALLOW", "WAIT", "BLOCK", "DENY_EXECUTE"];
+    if (!statuses.includes(o.status)) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_status`);
+    }
+    if (o.risk_tier !== null && !exports.ALL_RISK_TIERS.includes(o.risk_tier)) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_risk_tier`);
+    }
+    if (!exports.ALL_REQUIRED_APPROVERS.includes(o.required_approver)) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_required_approver`);
+    }
+    if ((o.status === "BLOCK" || o.status === "DENY_EXECUTE") && o.risk_tier !== null) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_risk_tier_must_be_null`);
+    }
+    if (!Array.isArray(o.reason_codes))
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_reason_codes`);
+    for (const rc of o.reason_codes) {
+        if (typeof rc !== "string" || !ALL_CODES_SET.has(rc)) {
+            throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_invalid_reason_code`);
+        }
+    }
+    if (!Array.isArray(o.capabilities))
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_capabilities`);
+    if (typeof o.policy_version !== "string" || !o.policy_version.trim()) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_policy_version`);
+    }
+}
+function isGovernanceV2(gov) {
+    return !!gov && typeof gov === "object" && gov.version === "governance_v2";
+}
+/** Validates the v1 base contract, then the v2-additive fields when version === "governance_v2". */
+function validateGovernanceV2(gov) {
+    const g = gov;
+    const v1Shape = { ...g, version: "governance_v1" };
+    validateGovernanceV1(v1Shape);
+    if (g.version !== "governance_v2")
+        throw new Error(`${exports.GOVERNANCE_INVALID}:version`);
+    const nba = g.nba;
+    if (!nba || typeof nba !== "object")
+        throw new Error(`${exports.GOVERNANCE_INVALID}:nba`);
+    const nbaO = nba;
+    const states = ["ALLOW", "WAIT", "BLOCK"];
+    if (!states.includes(nbaO.state))
+        throw new Error(`${exports.GOVERNANCE_INVALID}:nba_state`);
+    if (typeof nbaO.conviction_score !== "number")
+        throw new Error(`${exports.GOVERNANCE_INVALID}:nba_conviction_score`);
+    if (typeof g.action_type !== "string" || !g.action_type.trim()) {
+        throw new Error(`${exports.GOVERNANCE_INVALID}:action_type`);
+    }
+    if ("contact_history" in g && g.contact_history !== undefined) {
+        const ch = g.contact_history;
+        if (!ch || typeof ch !== "object")
+            throw new Error(`${exports.GOVERNANCE_INVALID}:contact_history`);
+        if (!ch.count_by_channel || typeof ch.count_by_channel !== "object") {
+            throw new Error(`${exports.GOVERNANCE_INVALID}:contact_history_count_by_channel`);
+        }
+        if (typeof ch.window_days !== "number")
+            throw new Error(`${exports.GOVERNANCE_INVALID}:contact_history_window_days`);
     }
 }
 function deepFreezeGovernance(obj) {
