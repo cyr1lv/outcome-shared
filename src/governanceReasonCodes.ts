@@ -219,6 +219,139 @@ export function validateGovernanceV1(gov: unknown): asserts gov is GovernanceV1 
   }
 }
 
+/** Match-decision axis, distinct from Mandate's governance-permission axis (§8.1). */
+export type NbaSurfaceState = "ALLOW" | "WAIT" | "BLOCK";
+
+/** Harm axis the company-policy-pack layer will classify (P1.5); "legal_edge" always forces HIGH. */
+export type HarmLevel = "none" | "company" | "legal_edge";
+
+export type RiskTier = "LOW" | "MEDIUM" | "HIGH";
+export const ALL_RISK_TIERS = ["LOW", "MEDIUM", "HIGH"] as const;
+
+export type RequiredApprover = "NONE" | "RECRUITER" | "HUMAN_MANDATORY";
+export const ALL_REQUIRED_APPROVERS = ["NONE", "RECRUITER", "HUMAN_MANDATORY"] as const;
+
+/** Ongewijzigde semantiek t.o.v. bestaande ad-hoc `status` strings in mandateEvaluate.js. */
+export type GovernanceDecisionStatus = "ALLOW" | "WAIT" | "BLOCK" | "DENY_EXECUTE";
+
+/**
+ * Canonical tier derivation (§4.2 / §8.2 table). Returns null risk_tier only for
+ * non-executable states (BLOCK/DENY_EXECUTE, or a legal-floor violation) — the
+ * caller must not execute regardless of required_approver in that case.
+ */
+export function deriveRiskTier(
+  status: GovernanceDecisionStatus,
+  nbaState: NbaSurfaceState,
+  harmLevel: HarmLevel
+): { risk_tier: RiskTier | null; required_approver: RequiredApprover } {
+  if (status === "BLOCK" || status === "DENY_EXECUTE" || nbaState === "BLOCK") {
+    return { risk_tier: null, required_approver: "HUMAN_MANDATORY" };
+  }
+  if (harmLevel === "legal_edge") {
+    return { risk_tier: "HIGH", required_approver: "HUMAN_MANDATORY" };
+  }
+  if (nbaState === "WAIT") {
+    return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
+  }
+  // nbaState === "ALLOW"
+  if (harmLevel === "company") {
+    return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
+  }
+  return { risk_tier: "LOW", required_approver: "NONE" };
+}
+
+/**
+ * `MandateVerdictV2` (§8.2) — additive successor to the untyped ad-hoc verdict shape
+ * mandateEvaluate.js currently returns. `risk_tier`/`required_approver` are new;
+ * everything else keeps existing semantics.
+ */
+export type MandateVerdictV2 = {
+  version: "mandate_verdict_v2";
+  status: GovernanceDecisionStatus;
+  risk_tier: RiskTier | null;
+  required_approver: RequiredApprover;
+  reason_codes: GovernanceReasonCode[];
+  capabilities: string[];
+  policy_version: string;
+};
+
+export function validateMandateVerdictV2(v: unknown): asserts v is MandateVerdictV2 {
+  if (!v || typeof v !== "object") throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_not_object`);
+  const o = v as Record<string, unknown>;
+  if (o.version !== "mandate_verdict_v2") throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_version`);
+  const statuses: GovernanceDecisionStatus[] = ["ALLOW", "WAIT", "BLOCK", "DENY_EXECUTE"];
+  if (!statuses.includes(o.status as GovernanceDecisionStatus)) {
+    throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_status`);
+  }
+  if (o.risk_tier !== null && !ALL_RISK_TIERS.includes(o.risk_tier as RiskTier)) {
+    throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_risk_tier`);
+  }
+  if (!ALL_REQUIRED_APPROVERS.includes(o.required_approver as RequiredApprover)) {
+    throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_required_approver`);
+  }
+  if ((o.status === "BLOCK" || o.status === "DENY_EXECUTE") && o.risk_tier !== null) {
+    throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_risk_tier_must_be_null`);
+  }
+  if (!Array.isArray(o.reason_codes)) throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_reason_codes`);
+  for (const rc of o.reason_codes as unknown[]) {
+    if (typeof rc !== "string" || !ALL_CODES_SET.has(rc)) {
+      throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_invalid_reason_code`);
+    }
+  }
+  if (!Array.isArray(o.capabilities)) throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_capabilities`);
+  if (typeof o.policy_version !== "string" || !o.policy_version.trim()) {
+    throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_policy_version`);
+  }
+}
+
+/**
+ * `GovernanceV2` (§8.3) — additive on `GovernanceV1`. v1-consumers ignore the new
+ * fields; Mandate reads them when present. `contact_history` is the light
+ * contact-count read (P1.5), fed in from outside — Mandate stays stateless (B2).
+ */
+export type GovernanceV2 = Omit<GovernanceV1, "version"> & {
+  version: "governance_v2";
+  nba: { state: NbaSurfaceState; conviction_score: number };
+  action_type: string;
+  contact_history?: {
+    count_by_channel: Record<GovernanceChannelKey, number>;
+    window_days: number;
+    last_contact_at?: string;
+  };
+};
+
+export function isGovernanceV2(gov: unknown): gov is GovernanceV2 {
+  return !!gov && typeof gov === "object" && (gov as Record<string, unknown>).version === "governance_v2";
+}
+
+/** Validates the v1 base contract, then the v2-additive fields when version === "governance_v2". */
+export function validateGovernanceV2(gov: unknown): asserts gov is GovernanceV2 {
+  const g = gov as Record<string, unknown>;
+  const v1Shape = { ...g, version: "governance_v1" as const };
+  validateGovernanceV1(v1Shape);
+  if (g.version !== "governance_v2") throw new Error(`${GOVERNANCE_INVALID}:version`);
+
+  const nba = g.nba;
+  if (!nba || typeof nba !== "object") throw new Error(`${GOVERNANCE_INVALID}:nba`);
+  const nbaO = nba as Record<string, unknown>;
+  const states: NbaSurfaceState[] = ["ALLOW", "WAIT", "BLOCK"];
+  if (!states.includes(nbaO.state as NbaSurfaceState)) throw new Error(`${GOVERNANCE_INVALID}:nba_state`);
+  if (typeof nbaO.conviction_score !== "number") throw new Error(`${GOVERNANCE_INVALID}:nba_conviction_score`);
+
+  if (typeof g.action_type !== "string" || !g.action_type.trim()) {
+    throw new Error(`${GOVERNANCE_INVALID}:action_type`);
+  }
+
+  if ("contact_history" in g && g.contact_history !== undefined) {
+    const ch = g.contact_history as Record<string, unknown>;
+    if (!ch || typeof ch !== "object") throw new Error(`${GOVERNANCE_INVALID}:contact_history`);
+    if (!ch.count_by_channel || typeof ch.count_by_channel !== "object") {
+      throw new Error(`${GOVERNANCE_INVALID}:contact_history_count_by_channel`);
+    }
+    if (typeof ch.window_days !== "number") throw new Error(`${GOVERNANCE_INVALID}:contact_history_window_days`);
+  }
+}
+
 export function deepFreezeGovernance<T extends object>(obj: T): T {
   if (obj === null || typeof obj !== "object") return obj;
   Object.getOwnPropertyNames(obj).forEach((prop) => {
