@@ -8,7 +8,7 @@
  * Exported as npm package @outcome/shared for cross-repo consumption.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-module.exports.ALL_REQUIRED_APPROVERS = module.exports.ALL_RISK_TIERS = module.exports.GOVERNANCE_CHANNEL_KEYS = module.exports.CHANNEL_BLOCK_REASON_CODES = module.exports.GOVERNANCE_TIMING_REASONS = module.exports.ALL_GOVERNANCE_REASON_CODES = module.exports.MANDATE_WAIT_REVIEW = module.exports.MANDATE_WAIT_NBA_NO_ACTION = module.exports.MANDATE_WAIT_EMAIL_TIMING = module.exports.MANDATE_BLOCK_EMAIL_CONSENT = module.exports.MANDATE_BLOCK_EMAIL_POLICY = module.exports.MANDATE_BLOCK_ALL_POLICY = module.exports.MANDATE_WAIT_NO_CHANNEL = module.exports.MANDATE_WAIT_TIMING = module.exports.MANDATE_EMAIL_ALLOWED = module.exports.MANDATE_PRESENT_ALLOWED = module.exports.NBA_STATE_MISSING = module.exports.NBA_NO_ACTION = module.exports.GOVERNANCE_BUILD_FAILED = module.exports.GOVERNANCE_INVALID = module.exports.GOVERNANCE_MISSING = module.exports.INTENT_UNKNOWN = module.exports.INTENT_REVOKED = module.exports.CHANNEL_NO_AVAILABLE = module.exports.CHANNEL_POLICY_BLOCK = module.exports.CONSENT_EXPIRED = module.exports.CONSENT_MISSING = module.exports.CONSENT_REVOKED = module.exports.TIMING_COOLDOWN = module.exports.TIMING_EXPIRED = module.exports.TIMING_PASSIVE = module.exports.TIMING_OK = void 0;
+module.exports.ALL_REQUIRED_APPROVERS = module.exports.ALL_RISK_TIERS = module.exports.GOVERNANCE_CHANNEL_KEYS = module.exports.CHANNEL_BLOCK_REASON_CODES = module.exports.GOVERNANCE_TIMING_REASONS = module.exports.ALL_GOVERNANCE_REASON_CODES = module.exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION = module.exports.MANDATE_WAIT_REVIEW = module.exports.MANDATE_WAIT_NBA_NO_ACTION = module.exports.MANDATE_WAIT_EMAIL_TIMING = module.exports.MANDATE_BLOCK_EMAIL_CONSENT = module.exports.MANDATE_BLOCK_EMAIL_POLICY = module.exports.MANDATE_BLOCK_ALL_POLICY = module.exports.MANDATE_WAIT_NO_CHANNEL = module.exports.MANDATE_WAIT_TIMING = module.exports.MANDATE_EMAIL_ALLOWED = module.exports.MANDATE_PRESENT_ALLOWED = module.exports.NBA_STATE_MISSING = module.exports.NBA_NO_ACTION = module.exports.GOVERNANCE_BUILD_FAILED = module.exports.GOVERNANCE_INVALID = module.exports.GOVERNANCE_MISSING = module.exports.INTENT_UNKNOWN = module.exports.INTENT_REVOKED = module.exports.CHANNEL_NO_AVAILABLE = module.exports.CHANNEL_POLICY_BLOCK = module.exports.CONSENT_EXPIRED = module.exports.CONSENT_MISSING = module.exports.CONSENT_REVOKED = module.exports.TIMING_COOLDOWN = module.exports.TIMING_EXPIRED = module.exports.TIMING_PASSIVE = module.exports.TIMING_OK = void 0;
 module.exports.assertGovernanceReasonCode = assertGovernanceReasonCode;
 module.exports.validateGovernanceV1 = validateGovernanceV1;
 module.exports.deriveRiskTier = deriveRiskTier;
@@ -44,6 +44,9 @@ module.exports.MANDATE_BLOCK_EMAIL_CONSENT = "MANDATE_BLOCK_EMAIL_CONSENT";
 module.exports.MANDATE_WAIT_EMAIL_TIMING = "MANDATE_WAIT_EMAIL_TIMING";
 module.exports.MANDATE_WAIT_NBA_NO_ACTION = "MANDATE_WAIT_NBA_NO_ACTION";
 module.exports.MANDATE_WAIT_REVIEW = "MANDATE_WAIT_REVIEW";
+/** Emitted by mandateEvaluate for execution-like actions with no registered handler. Lived only as a
+ *  local constant in Mandate until 2026-07-29, so every DENY_EXECUTE verdict failed validation. */
+module.exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION = "MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION";
 module.exports.ALL_GOVERNANCE_REASON_CODES = [
     module.exports.TIMING_OK,
     module.exports.TIMING_PASSIVE,
@@ -71,6 +74,7 @@ module.exports.ALL_GOVERNANCE_REASON_CODES = [
     module.exports.MANDATE_WAIT_EMAIL_TIMING,
     module.exports.MANDATE_WAIT_NBA_NO_ACTION,
     module.exports.MANDATE_WAIT_REVIEW,
+    module.exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION,
 ];
 /** Allowed values for governance.timing.reason_code (includes consent revocation per timing rules). */
 module.exports.GOVERNANCE_TIMING_REASONS = new Set([
@@ -200,7 +204,9 @@ function deriveRiskTier(status, nbaState, harmLevel) {
     if (harmLevel === "legal_edge") {
         return { risk_tier: "HIGH", required_approver: "HUMAN_MANDATORY" };
     }
-    if (nbaState === "WAIT") {
+    // Mandate itself is withholding permission (its own WAIT axis) — a verdict must never say
+    // "no approver required" while the governance gate is still waiting, regardless of match fit.
+    if (status === "WAIT" || nbaState === "WAIT") {
         return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
     }
     // nbaState === "ALLOW"
@@ -237,6 +243,12 @@ function validateMandateVerdictV2(v) {
     }
     if (!Array.isArray(o.capabilities))
         throw new Error(`${module.exports.GOVERNANCE_INVALID}:mandate_verdict_capabilities`);
+    for (const cap of o.capabilities) {
+        const c = cap;
+        if (!c || typeof c !== "object" || typeof c.type !== "string" || typeof c.enabled !== "boolean") {
+            throw new Error(`${module.exports.GOVERNANCE_INVALID}:mandate_verdict_capability_shape`);
+        }
+    }
     if (typeof o.policy_version !== "string" || !o.policy_version.trim()) {
         throw new Error(`${module.exports.GOVERNANCE_INVALID}:mandate_verdict_policy_version`);
     }

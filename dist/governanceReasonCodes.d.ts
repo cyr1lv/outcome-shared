@@ -30,7 +30,10 @@ export declare const MANDATE_BLOCK_EMAIL_CONSENT: "MANDATE_BLOCK_EMAIL_CONSENT";
 export declare const MANDATE_WAIT_EMAIL_TIMING: "MANDATE_WAIT_EMAIL_TIMING";
 export declare const MANDATE_WAIT_NBA_NO_ACTION: "MANDATE_WAIT_NBA_NO_ACTION";
 export declare const MANDATE_WAIT_REVIEW: "MANDATE_WAIT_REVIEW";
-export declare const ALL_GOVERNANCE_REASON_CODES: readonly ["TIMING_OK", "TIMING_PASSIVE", "TIMING_EXPIRED", "TIMING_COOLDOWN", "CONSENT_REVOKED", "CONSENT_MISSING", "CONSENT_EXPIRED", "CHANNEL_POLICY_BLOCK", "CHANNEL_NO_AVAILABLE", "INTENT_REVOKED", "INTENT_UNKNOWN", "GOVERNANCE_MISSING", "GOVERNANCE_INVALID", "GOVERNANCE_BUILD_FAILED", "NBA_NO_ACTION", "NBA_STATE_MISSING", "MANDATE_PRESENT_ALLOWED", "MANDATE_EMAIL_ALLOWED", "MANDATE_WAIT_TIMING", "MANDATE_WAIT_NO_CHANNEL", "MANDATE_BLOCK_ALL_POLICY", "MANDATE_BLOCK_EMAIL_POLICY", "MANDATE_BLOCK_EMAIL_CONSENT", "MANDATE_WAIT_EMAIL_TIMING", "MANDATE_WAIT_NBA_NO_ACTION", "MANDATE_WAIT_REVIEW"];
+/** Emitted by mandateEvaluate for execution-like actions with no registered handler. Lived only as a
+ *  local constant in Mandate until 2026-07-29, so every DENY_EXECUTE verdict failed validation. */
+export declare const MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION: "MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION";
+export declare const ALL_GOVERNANCE_REASON_CODES: readonly ["TIMING_OK", "TIMING_PASSIVE", "TIMING_EXPIRED", "TIMING_COOLDOWN", "CONSENT_REVOKED", "CONSENT_MISSING", "CONSENT_EXPIRED", "CHANNEL_POLICY_BLOCK", "CHANNEL_NO_AVAILABLE", "INTENT_REVOKED", "INTENT_UNKNOWN", "GOVERNANCE_MISSING", "GOVERNANCE_INVALID", "GOVERNANCE_BUILD_FAILED", "NBA_NO_ACTION", "NBA_STATE_MISSING", "MANDATE_PRESENT_ALLOWED", "MANDATE_EMAIL_ALLOWED", "MANDATE_WAIT_TIMING", "MANDATE_WAIT_NO_CHANNEL", "MANDATE_BLOCK_ALL_POLICY", "MANDATE_BLOCK_EMAIL_POLICY", "MANDATE_BLOCK_EMAIL_CONSENT", "MANDATE_WAIT_EMAIL_TIMING", "MANDATE_WAIT_NBA_NO_ACTION", "MANDATE_WAIT_REVIEW", "MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION"];
 export type GovernanceReasonCode = (typeof ALL_GOVERNANCE_REASON_CODES)[number];
 /** Allowed values for governance.timing.reason_code (includes consent revocation per timing rules). */
 export declare const GOVERNANCE_TIMING_REASONS: Set<string>;
@@ -95,13 +98,18 @@ export declare function deriveRiskTier(status: GovernanceDecisionStatus, nbaStat
  * mandateEvaluate.js currently returns. `risk_tier`/`required_approver` are new;
  * everything else keeps existing semantics.
  */
+/** Mandate is the sole authority on capability inference; Platform passes these through unchanged. */
+export type MandateCapability = {
+    type: string;
+    enabled: boolean;
+};
 export type MandateVerdictV2 = {
     version: "mandate_verdict_v2";
     status: GovernanceDecisionStatus;
     risk_tier: RiskTier | null;
     required_approver: RequiredApprover;
     reason_codes: GovernanceReasonCode[];
-    capabilities: string[];
+    capabilities: MandateCapability[];
     policy_version: string;
 };
 export declare function validateMandateVerdictV2(v: unknown): asserts v is MandateVerdictV2;

@@ -8,7 +8,7 @@
  * Exported as npm package @outcome/shared for cross-repo consumption.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ALL_REQUIRED_APPROVERS = exports.ALL_RISK_TIERS = exports.GOVERNANCE_CHANNEL_KEYS = exports.CHANNEL_BLOCK_REASON_CODES = exports.GOVERNANCE_TIMING_REASONS = exports.ALL_GOVERNANCE_REASON_CODES = exports.MANDATE_WAIT_REVIEW = exports.MANDATE_WAIT_NBA_NO_ACTION = exports.MANDATE_WAIT_EMAIL_TIMING = exports.MANDATE_BLOCK_EMAIL_CONSENT = exports.MANDATE_BLOCK_EMAIL_POLICY = exports.MANDATE_BLOCK_ALL_POLICY = exports.MANDATE_WAIT_NO_CHANNEL = exports.MANDATE_WAIT_TIMING = exports.MANDATE_EMAIL_ALLOWED = exports.MANDATE_PRESENT_ALLOWED = exports.NBA_STATE_MISSING = exports.NBA_NO_ACTION = exports.GOVERNANCE_BUILD_FAILED = exports.GOVERNANCE_INVALID = exports.GOVERNANCE_MISSING = exports.INTENT_UNKNOWN = exports.INTENT_REVOKED = exports.CHANNEL_NO_AVAILABLE = exports.CHANNEL_POLICY_BLOCK = exports.CONSENT_EXPIRED = exports.CONSENT_MISSING = exports.CONSENT_REVOKED = exports.TIMING_COOLDOWN = exports.TIMING_EXPIRED = exports.TIMING_PASSIVE = exports.TIMING_OK = void 0;
+exports.ALL_REQUIRED_APPROVERS = exports.ALL_RISK_TIERS = exports.GOVERNANCE_CHANNEL_KEYS = exports.CHANNEL_BLOCK_REASON_CODES = exports.GOVERNANCE_TIMING_REASONS = exports.ALL_GOVERNANCE_REASON_CODES = exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION = exports.MANDATE_WAIT_REVIEW = exports.MANDATE_WAIT_NBA_NO_ACTION = exports.MANDATE_WAIT_EMAIL_TIMING = exports.MANDATE_BLOCK_EMAIL_CONSENT = exports.MANDATE_BLOCK_EMAIL_POLICY = exports.MANDATE_BLOCK_ALL_POLICY = exports.MANDATE_WAIT_NO_CHANNEL = exports.MANDATE_WAIT_TIMING = exports.MANDATE_EMAIL_ALLOWED = exports.MANDATE_PRESENT_ALLOWED = exports.NBA_STATE_MISSING = exports.NBA_NO_ACTION = exports.GOVERNANCE_BUILD_FAILED = exports.GOVERNANCE_INVALID = exports.GOVERNANCE_MISSING = exports.INTENT_UNKNOWN = exports.INTENT_REVOKED = exports.CHANNEL_NO_AVAILABLE = exports.CHANNEL_POLICY_BLOCK = exports.CONSENT_EXPIRED = exports.CONSENT_MISSING = exports.CONSENT_REVOKED = exports.TIMING_COOLDOWN = exports.TIMING_EXPIRED = exports.TIMING_PASSIVE = exports.TIMING_OK = void 0;
 exports.assertGovernanceReasonCode = assertGovernanceReasonCode;
 exports.validateGovernanceV1 = validateGovernanceV1;
 exports.deriveRiskTier = deriveRiskTier;
@@ -44,6 +44,9 @@ exports.MANDATE_BLOCK_EMAIL_CONSENT = "MANDATE_BLOCK_EMAIL_CONSENT";
 exports.MANDATE_WAIT_EMAIL_TIMING = "MANDATE_WAIT_EMAIL_TIMING";
 exports.MANDATE_WAIT_NBA_NO_ACTION = "MANDATE_WAIT_NBA_NO_ACTION";
 exports.MANDATE_WAIT_REVIEW = "MANDATE_WAIT_REVIEW";
+/** Emitted by mandateEvaluate for execution-like actions with no registered handler. Lived only as a
+ *  local constant in Mandate until 2026-07-29, so every DENY_EXECUTE verdict failed validation. */
+exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION = "MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION";
 exports.ALL_GOVERNANCE_REASON_CODES = [
     exports.TIMING_OK,
     exports.TIMING_PASSIVE,
@@ -71,6 +74,7 @@ exports.ALL_GOVERNANCE_REASON_CODES = [
     exports.MANDATE_WAIT_EMAIL_TIMING,
     exports.MANDATE_WAIT_NBA_NO_ACTION,
     exports.MANDATE_WAIT_REVIEW,
+    exports.MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION,
 ];
 /** Allowed values for governance.timing.reason_code (includes consent revocation per timing rules). */
 exports.GOVERNANCE_TIMING_REASONS = new Set([
@@ -200,7 +204,9 @@ function deriveRiskTier(status, nbaState, harmLevel) {
     if (harmLevel === "legal_edge") {
         return { risk_tier: "HIGH", required_approver: "HUMAN_MANDATORY" };
     }
-    if (nbaState === "WAIT") {
+    // Mandate itself is withholding permission (its own WAIT axis) — a verdict must never say
+    // "no approver required" while the governance gate is still waiting, regardless of match fit.
+    if (status === "WAIT" || nbaState === "WAIT") {
         return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
     }
     // nbaState === "ALLOW"
@@ -237,6 +243,12 @@ function validateMandateVerdictV2(v) {
     }
     if (!Array.isArray(o.capabilities))
         throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_capabilities`);
+    for (const cap of o.capabilities) {
+        const c = cap;
+        if (!c || typeof c !== "object" || typeof c.type !== "string" || typeof c.enabled !== "boolean") {
+            throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_capability_shape`);
+        }
+    }
     if (typeof o.policy_version !== "string" || !o.policy_version.trim()) {
         throw new Error(`${exports.GOVERNANCE_INVALID}:mandate_verdict_policy_version`);
     }

@@ -42,6 +42,9 @@ export const MANDATE_BLOCK_EMAIL_CONSENT = "MANDATE_BLOCK_EMAIL_CONSENT" as cons
 export const MANDATE_WAIT_EMAIL_TIMING = "MANDATE_WAIT_EMAIL_TIMING" as const;
 export const MANDATE_WAIT_NBA_NO_ACTION = "MANDATE_WAIT_NBA_NO_ACTION" as const;
 export const MANDATE_WAIT_REVIEW = "MANDATE_WAIT_REVIEW" as const;
+/** Emitted by mandateEvaluate for execution-like actions with no registered handler. Lived only as a
+ *  local constant in Mandate until 2026-07-29, so every DENY_EXECUTE verdict failed validation. */
+export const MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION = "MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION" as const;
 
 export const ALL_GOVERNANCE_REASON_CODES = [
   TIMING_OK,
@@ -70,6 +73,7 @@ export const ALL_GOVERNANCE_REASON_CODES = [
   MANDATE_WAIT_EMAIL_TIMING,
   MANDATE_WAIT_NBA_NO_ACTION,
   MANDATE_WAIT_REVIEW,
+  MANDATE_DENY_EXECUTE_UNSUPPORTED_ACTION,
 ] as const;
 
 export type GovernanceReasonCode = (typeof ALL_GOVERNANCE_REASON_CODES)[number];
@@ -250,7 +254,9 @@ export function deriveRiskTier(
   if (harmLevel === "legal_edge") {
     return { risk_tier: "HIGH", required_approver: "HUMAN_MANDATORY" };
   }
-  if (nbaState === "WAIT") {
+  // Mandate itself is withholding permission (its own WAIT axis) — a verdict must never say
+  // "no approver required" while the governance gate is still waiting, regardless of match fit.
+  if (status === "WAIT" || nbaState === "WAIT") {
     return { risk_tier: "MEDIUM", required_approver: "RECRUITER" };
   }
   // nbaState === "ALLOW"
@@ -265,13 +271,16 @@ export function deriveRiskTier(
  * mandateEvaluate.js currently returns. `risk_tier`/`required_approver` are new;
  * everything else keeps existing semantics.
  */
+/** Mandate is the sole authority on capability inference; Platform passes these through unchanged. */
+export type MandateCapability = { type: string; enabled: boolean };
+
 export type MandateVerdictV2 = {
   version: "mandate_verdict_v2";
   status: GovernanceDecisionStatus;
   risk_tier: RiskTier | null;
   required_approver: RequiredApprover;
   reason_codes: GovernanceReasonCode[];
-  capabilities: string[];
+  capabilities: MandateCapability[];
   policy_version: string;
 };
 
@@ -299,6 +308,12 @@ export function validateMandateVerdictV2(v: unknown): asserts v is MandateVerdic
     }
   }
   if (!Array.isArray(o.capabilities)) throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_capabilities`);
+  for (const cap of o.capabilities as unknown[]) {
+    const c = cap as Record<string, unknown> | null;
+    if (!c || typeof c !== "object" || typeof c.type !== "string" || typeof c.enabled !== "boolean") {
+      throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_capability_shape`);
+    }
+  }
   if (typeof o.policy_version !== "string" || !o.policy_version.trim()) {
     throw new Error(`${GOVERNANCE_INVALID}:mandate_verdict_policy_version`);
   }
